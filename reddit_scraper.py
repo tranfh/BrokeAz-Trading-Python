@@ -2,7 +2,7 @@
 TODO: navigate to subreddit
 TODO: iterate through each post filtering out the tags
 TODO: iterate through each post and filter out the comments for cashtags
-TODO: store the above in a table
+TODO: store the above in a table = store in database store as an object? 
 TODO: sort by most mentioned
 TODO: visualize in a graph
 TODO: create a frontend table to display
@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import logging
+import matplotlib.pyplot as plt
 
 # create logger
 logger = logging.getLogger('reddit_scrapper')
@@ -136,3 +137,11 @@ if __name__ == '__main__':
         #     tickers = {**tickers, **postComment}
 
     print(json.dumps(tickers, indent=4))
+
+    # plot bar graph
+    names = list(tickers.keys())
+    values = list(tickers.values())
+
+    plt.bar(range(len(tickers)), values, tick_label=names)
+    plt.show()
+
