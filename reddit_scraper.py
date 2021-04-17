@@ -59,15 +59,15 @@ class SubredditScraper:
     def __init__(self, searchRange):
         self.exclusions = [
             'ALL', 'AND', 'APPLE', 'ASK', 'BETA', 'BETS', 'BID', 'BIG', 
-            'BILL', 'BMW', 'CBD', 'CEO', 'CFO', 'CHEAP', 'CLOSE', 'COVID', 
-            'CURE', 'DFV', 'DOING', 'EDIT', 'EVERY', 'FAANG', 'FIX', 'FOMO', 
+            'BILL', 'BMW', 'CBD', 'CEO', 'CFO', 'CTV', 'CHEAP', 'CLOSE', 'COVID', 
+            'CURE', 'DFV', 'DOING', 'EDIT', 'ETF', 'EVERY', 'FAANG', 'FDA', 'FIX', 'FOMO', 
             'FTD', 'FUCK', 'GAS', 'GOING', 'GOOD', 'GRANT', 'HOLY', 'ICON', 
             'IMO', 'IOU', 'IPO', 'IRA', 'IRS', 'LARGE', 'LOOK', 'LOVE', 'MACD', 
             'MEDIA', 'META', 'MEETS', 'MOLY', 'MONEY', 'MOON', 'MORE', 'NASA', 
-            'NEW', 'NEWS', 'NOT', 'ONCE', 'ONLY', 'PARKS', 'PENNY', 'PHIL', 
+            'NEW', 'NEWS', 'NOT', 'ONCE', 'OTC', 'ONLY', 'PARKS', 'PENNY', 'PHIL', 
             'POP', 'PRICE', 'PUTS', 'QUICK', 'REIT', 'ROPE', 'RSI', 'SAFE', 
-            'SAME', 'SEEK', 'SHARE', 'SHORT', 'STOCK', 'TAX', 'TDLR', 'THAN', 
-            'THE', 'THEME', 'THREE', 'TSX', 'USD', 'WHERE', 'WSB', 'YEAR', 'YOLO', 'YOUR'
+            'SAME', 'SEEK', 'SHARE', 'SHORT', 'STOCK', 'TAX', 'TLDR', 'THAN', 
+            'THE', 'THEME', 'THREE', 'TTM', 'TSX', 'USD', 'WHERE', 'WSB', 'YEAR', 'YOLO', 'YOUR'
             ]
 
         self.posts: StockPost(postID, postURL, postTitle, postText, upvotes, comments) = []
@@ -136,12 +136,16 @@ if __name__ == '__main__':
         #     postComment = scraper.tickerIdentifier(comment.body)
         #     tickers = {**tickers, **postComment}
 
-    print(json.dumps(tickers, indent=4))
+    # extract occurrences higher than 5 and sort Dictionary in alphabetical order
+    tickerDict = {key:val for key, val in tickers.items() if val >= 5}
+    tickerDict = {key:val for key, val in sorted(tickerDict.items(), key=lambda item: item[1])}
+
+    print(json.dumps(tickerDict, indent=4))
 
     # plot bar graph
-    names = list(tickers.keys())
-    values = list(tickers.values())
+    names = list(tickerDict.keys())
+    values = list(tickerDict.values())
 
-    plt.bar(range(len(tickers)), values, tick_label=names)
+    plt.bar(range(len(tickerDict)), values, tick_label=names)
     plt.show()
 
