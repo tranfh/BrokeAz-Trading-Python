@@ -7,14 +7,12 @@ TODO: sort by most mentioned
 TODO: visualize in a graph
 TODO: create a frontend table to display
 """
-import sqlite3
-import json
-import praw
-from datetime import datetime
+
+import json, sys, traceback, praw, sqlite3, logging
+from datetime import date
 import numpy as np
 import pandas as pd
-import yfinance as yf
-import logging
+from yahoofinancials import YahooFinancials
 import matplotlib.pyplot as plt
 
 # create logger
@@ -54,22 +52,10 @@ class StockPost(object):
         self.comments = comments
 
 
+
 class SubredditScraper:
 
     def __init__(self, searchRange):
-        self.exclusions = [
-            'ALL', 'AND', 'APPLE', 'ASK', 'BETA', 'BETS', 'BID', 'BIG', 
-            'BILL', 'BMW', 'CBD', 'CEO', 'CFO', 'CTV', 'CHEAP', 'CLOSE', 'COVID', 
-            'CURE', 'DFV', 'DOING', 'EDIT', 'ETF', 'EVERY', 'FAANG', 'FDA', 'FIX', 'FOMO', 
-            'FTD', 'FUCK', 'GAS', 'GOING', 'GOOD', 'GRANT', 'HOLY', 'ICON', 
-            'IMO', 'IOU', 'IPO', 'IRA', 'IRS', 'LARGE', 'LOOK', 'LOVE', 'MACD', 
-            'MEDIA', 'META', 'MEETS', 'MOLY', 'MONEY', 'MOON', 'MORE', 'NASA', 
-            'NEW', 'NEWS', 'NOT', 'ONCE', 'OTC', 'ONLY', 'PARKS', 'PENNY', 'PHIL', 
-            'POP', 'PRICE', 'PUTS', 'QUICK', 'REIT', 'ROPE', 'RSI', 'SAFE', 
-            'SAME', 'SEEK', 'SHARE', 'SHORT', 'STOCK', 'TAX', 'TLDR', 'THAN', 
-            'THE', 'THEME', 'THREE', 'TTM', 'TSX', 'USD', 'WHERE', 'WSB', 'YEAR', 'YOLO', 'YOUR'
-            ]
-
         self.posts: StockPost(postID, postURL, postTitle, postText, upvotes, comments) = []
         self.tickers = dict()
         # iterate through the posts and store them as an object
@@ -92,37 +78,59 @@ class SubredditScraper:
                 logger.info("Number of Post Retrieved Today: " + str(len(self.posts)))
 
         except Exception as e:
+            traceback.print_exc(file=sys.stdout)
             logger.error(e)
 
-    # Looks for potential tickers from a string of text
+    # Looks for potential tickers from a block of text
     def tickerIdentifier(self, text):
-        # retrieve cashtag and any capitalized words
+        # Initialize SQL
+        connection = sqlite3.connect('BrokeAz.db')
+        cursor = connection.cursor()
+
+        # Retrieve cashtag and allcap words with length 3-5 and remove any special characters
         try:
-        # retrieve cashtag and any capitalized words
             potentialTickers = [
                 word for word in text.split() if word.isupper() or "$" in word]
-        # remove any special characters
             potentialTickers = [''.join(e for e in word if e.isalnum())
                                 for word in potentialTickers]
-        # retrieve only 4 letter words
             potentialTickers = [
-                word for word in potentialTickers if len(word) >= 3 and len(word) <= 5 and word.isalpha()]
+                word.upper() for word in potentialTickers if len(word) >= 3 and len(word) <= 5 and word.isalpha()]
         
-        # add to dictionary
+        # Insertion Process: Add to Dictionary
             for ticker in potentialTickers:
-                print(ticker)
-                if ticker not in self.exclusions:
-                    self.tickers[ticker] = self.tickers.get(ticker, 0) + 1  
+                # Check if it is a Real Stock Symbol by checking the DB
+                # if not in word_exclusion table proceed to cross check with YahooFinancials to ensure its a valid Ticker (Line 108-109)
+                # if invalid YahooFinancials(ticker).get_stock_quote_type_data() will return { {Ticker} : None } (Line 111)
+                # insert to dictionary otherwise insert capitalized word to DB if not a valid ticker  (Line 112/114)
+                cursor.execute("SELECT word FROM word_exclusion where word='{}'".format(ticker.upper()))
+                if cursor.fetchone() == None:
+                    test = YahooFinancials(ticker).get_stock_quote_type_data()
+                    for key, val in test.items():
+                        if val != None:
+                            self.tickers[ticker] = self.tickers.get(ticker, 0) + 1 
+                        else:
+                            cursor.execute("INSERT INTO word_exclusion (word) VALUES ('{}')".format(ticker.upper()))
+                            connection.commit()
+                else:
+                # Skip to the next ticker
+                    continue
 
             return self.tickers
 
         except Exception as e:
+            traceback.print_exc(file=sys.stdout)
             logger.error(e)
+
+
 
 if __name__ == '__main__':
     tickers = dict()
+
     logger.info("Reddit Scraper Starting...")
     scraper = SubredditScraper("day")
+
+    logger.info("Beginning Insertion Process")
+    logger.info("This May Take a Few Minutes...")
     for redditPost in scraper.posts:
         postTitleTickers = scraper.tickerIdentifier(redditPost.postTitle)
         postTickers = scraper.tickerIdentifier(redditPost.postText)
@@ -136,7 +144,39 @@ if __name__ == '__main__':
         #     postComment = scraper.tickerIdentifier(comment.body)
         #     tickers = {**tickers, **postComment}
 
-    # extract occurrences higher than 5 and sort Dictionary in alphabetical order
+    # Connect to Database
+    connection = sqlite3.connect('BrokeAz.db')
+    cursor = connection.cursor()
+
+    # Execute SQL Query
+    today = date.today().isoformat()
+    try:
+        logger.info("Adding Dictionary to Database: scraped_stock")
+
+        insertQuery = "INSERT INTO scraped_stocks (date, symbol, count) VALUES ('{}','{}',{})"
+        updateQuery = "UPDATE scraped_stocks SET count={} WHERE date='{}', AND symbol='{}'"
+        
+        # Iterate through the dictionary
+        for key, val in tickers.items():
+            try:          
+                # Insert into DB if doesn't exist
+                logger.info(insertQuery.format(today, key, val))
+                cursor.execute(insertQuery.format(today, key, val))
+                connection.commit()          
+            except Exception as e:
+                logger.warning(e)
+                 # Update the count if it does exist 
+                logger.info(updateQuery.format(val, today, symbol))
+                cursor.execute(updateQuery.format(val, today, symbol))
+                connection.commit()
+
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        logger.error(e)
+
+    connection.close()
+
+    # Extract occurrences higher than 5 and sort Dictionary in alphabetical order
     tickerDict = {key:val for key, val in tickers.items() if val >= 5}
     tickerDict = {key:val for key, val in sorted(tickerDict.items(), key=lambda item: item[1])}
 
@@ -147,5 +187,8 @@ if __name__ == '__main__':
     values = list(tickerDict.values())
 
     plt.bar(range(len(tickerDict)), values, tick_label=names)
+    plt.title("Reddit Stock Sentiment - {}".format(today))
+    plt.ylabel("# of Mentions")
+    plt.xlabel("Stock Ticker")
     plt.show()
 
